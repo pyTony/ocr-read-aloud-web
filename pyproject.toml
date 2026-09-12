@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ocr-read-aloud"
+version = "1.5.9"
+description = "Read text aloud from scanned PDFs and images using local OCR + TTS"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Tony Veijalainen" }]
+keywords = ["ocr", "tts", "pdf", "accessibility", "tesseract", "pyttsx3"]
+dependencies = [
+    "pymupdf>=1.24.0",
+    "Pillow>=10.0.0",
+    "pytesseract>=0.3.10",
+    "pyttsx3>=2.90",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+ocr-read-aloud = "ocr_read_aloud.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ocr_read_aloud*"]
+
+[tool.setuptools.package-data]
+ocr_read_aloud = ["py.typed"]

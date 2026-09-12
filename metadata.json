@@ -1,0 +1,8 @@
+{
+  "name": "OCR Read Aloud",
+  "description": "Local OCR text extraction from scanned PDFs and images with speech synthesis playback, reading order tracking, and ad skip.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

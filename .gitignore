@@ -1,0 +1,22 @@
+# Ignore source PDFs
+*.pdf
+
+# Ignore scratch/test output that isn't the deliverable
+_title_ocr_out.txt
+changes.git.diff
+backup/vision_debug/
+
+vision_debug/
+cli_diff.txt
+*.ocr.txt
+__pycache__/
+*.pyc
+
+# Runtime caches
+*.proofed.txt
+*.ocr.txt
+
+# Source PDFs and images (too large, regenerable from source)
+*.pdf
+*.jpg
+*.png
