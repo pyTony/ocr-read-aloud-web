@@ -10,22 +10,15 @@ export function linesShareColumn(a: OcrLine, b: OcrLine): boolean {
   const minW = Math.max(1.0, Math.min(a.width, b.width));
   const maxW = Math.max(1.0, Math.max(a.width, b.width));
 
-  // Clear horizontal overlap -> same column
-  if (overlap >= 0.15 * minW) {
-    return true;
+  // If there is no horizontal overlap or negative overlap (column gutter), never merge across columns
+  if (overlap < 0.2 * minW) {
+    return false;
   }
   const gap = Math.max(0.0, Math.max(a0, b0) - Math.min(a1, b1));
-  // Distinct gutters between magazine columns -> never merge across
-  if (overlap <= 0 && gap > Math.max(28.0, 0.08 * maxW)) {
+  if (gap > 15.0) {
     return false;
   }
-  // Midpoints far apart relative to widths -> different columns
-  const midA = (a0 + a1) / 2.0;
-  const midB = (b0 + b1) / 2.0;
-  if (Math.abs(midA - midB) > 0.55 * Math.max(minW, maxW * 0.5) && overlap < 0.05 * minW) {
-    return false;
-  }
-  return overlap > 0;
+  return overlap >= 0.2 * minW;
 }
 
 function lineMidX(ln: OcrLine): number {
@@ -224,7 +217,17 @@ export function mergeLinesToChunks(
       prev.height === ln.height
     );
 
-    if (sameCol && gap <= avgH * gapFactor && curLen <= maxChars && !sameBbox) {
+    // Check if ln is a distinct title, headline, item number, or product card start
+    const isLnHeader = (
+      (ln.text.length < 55 && ln.text === ln.text.toUpperCase() && /[A-Z]/.test(ln.text)) ||
+      /^(\d+[\.\)]|[•\-\*]|MODEL|KIT|SPECIAL|TABLE|FIGURE|PAGE|SECTION|THE MOST|COMPLETE|NEW|JUMBO)/i.test(ln.text.trim())
+    );
+    const prevEndedWithPriceOrTerm = (
+      /(\$\d+(\.\d{2})?|\b(ea|each|kit|only|total)\b|[.!?…:])$/i.test(prev.text.trim())
+    );
+    const isNewCardBoundary = isLnHeader && (prevEndedWithPriceOrTerm || gap > avgH * 0.4);
+
+    if (sameCol && gap <= avgH * gapFactor && curLen <= maxChars && !sameBbox && !isNewCardBoundary) {
       cur.push(ln);
     } else {
       chunks.push(flush(cur));

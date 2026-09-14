@@ -1,6 +1,6 @@
 {
   "name": "OCR Read Aloud",
-  "description": "Local OCR text extraction from scanned PDFs and images with speech synthesis playback, reading order tracking, and ad skip.",
+  "description": "Read aloud scanned publications and PDFs with authentic 1976 BYTE magazine page previews, ad-grid Bridge Rule ordering, synchronized speech highlighting, and multi-engine AI proofreading.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

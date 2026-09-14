@@ -324,6 +324,17 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"Ollama model for --proofread (default: {DEFAULT_OLLAMA_MODEL})",
     )
     p.add_argument(
+        "--gemini",
+        action="store_true",
+        help="Use Google Gemini API for --proofread (requires GEMINI_API_KEY)",
+    )
+    p.add_argument(
+        "--gemini-model",
+        default="gemini-2.5-flash",
+        metavar="NAME",
+        help="Gemini model for --gemini proofread (default: gemini-2.5-flash)",
+    )
+    p.add_argument(
         "--ollama-host",
         default=DEFAULT_OLLAMA_HOST,
         metavar="URL",
@@ -772,6 +783,9 @@ def _run_speak_interleaved(
         if getattr(args, "start_page_explicit", args.start_page != 1):
             args.start_page = args.start_page + computed_offset
             print(f"Adjusted start page to PDF {args.start_page} (printed {args.start_page - computed_offset})", flush=True)
+        if args.end_page is not None:
+            args.end_page = args.end_page + computed_offset
+            print(f"Adjusted end page to PDF {args.end_page} (printed {args.end_page - computed_offset})", flush=True)
 
     # Now set the global offset for the controller
     global_offset = computed_offset
@@ -1091,7 +1105,8 @@ def _run_ocr_only_interleaved(
     proof_thread = None
     if do_proof:
         clear_proofread_cancel()
-        print("\n[Proofreading via Ollama (interleaved)…]", flush=True)
+        prov_name = "Google Gemini" if "gemini" in args.ollama_model.lower() else "Ollama"
+        print(f"\n[Proofreading via {prov_name} (interleaved)…]", flush=True)
         proof_q, proof_thread = _start_proof_worker(
             model=args.ollama_model,
             host=args.ollama_host,
@@ -1183,6 +1198,10 @@ def run(args: argparse.Namespace) -> int:
 
     path = args.path.expanduser().resolve()
     lang = normalize_lang(args.lang)
+
+    if getattr(args, "gemini", False):
+        args.proofread = True
+        args.ollama_model = args.gemini_model
 
     # Distinguish "user typed --start-page N" from "left it unset" — the
     # offset auto-adjustment further below must only fire for an explicit

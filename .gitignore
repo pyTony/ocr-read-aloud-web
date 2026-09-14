@@ -1,3 +1,11 @@
+# Node.js and build outputs
+node_modules/
+dist/
+.env
+.env.local
+*.log
+.DS_Store
+
 # Ignore source PDFs
 *.pdf
 
@@ -20,3 +28,4 @@ __pycache__/
 *.pdf
 *.jpg
 *.png
+

@@ -1,3 +1,12 @@
+export type NoiseHeaderFooterType =
+  | 'page-number'
+  | 'date-stamp'
+  | 'filename'
+  | 'running-head'
+  | 'running-footer'
+  | 'table-line'
+  | 'symbol-rubbish';
+
 export interface OcrLine {
   text: string;
   left: number;
@@ -5,6 +14,9 @@ export interface OcrLine {
   width: number;
   height: number;
   confidence?: number;
+  isNoiseHeaderFooter?: boolean;
+  noiseType?: NoiseHeaderFooterType;
+  noiseReason?: string;
 }
 
 export interface PageUnit {
@@ -59,4 +71,8 @@ export interface LlmConfig {
   ollamaModel: string;
   openaiHost: string;
   openaiModel: string;
+  autoProofread: boolean;
+  geminiApiKey?: string;
+  isGeminiQuotaExhausted?: boolean;
+  geminiQuotaMessage?: string;
 }

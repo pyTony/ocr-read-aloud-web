@@ -531,6 +531,7 @@ class PlaybackController:
         """
         Build speakable paragraph OcrLines from proofread text, preserving
         real bounding boxes from the original OCR lines wherever possible.
+        [IMPROVEMENT: BBOX-ANCHOR - BEGIN]
         """
         from ocr_read_aloud.proofread import parse_proof_page_text
         from ocr_read_aloud.text_clean import dehyphenate_inline
@@ -541,7 +542,7 @@ class PlaybackController:
         if not body:
             return []
 
-        orig_lines = list(page.lines or [])
+        orig_lines = [ln for ln in (page.lines or []) if ln.width > 0 and ln.height > 0]
         paras = [dehyphenate_inline(p.strip()) for p in body.split("\n\n") if p.strip()]
         if not paras:
             paras = [body]
@@ -549,19 +550,45 @@ class PlaybackController:
         out: list[OcrLine] = []
         curr_line_idx = 0
 
-        for para in paras:
-            # Extract distinctive words to match against original line positions
-            words = [w.lower() for w in re.findall(r"\b[A-Za-z0-9]{4,}\b", para)]
-            matched_lines = []
+        # Helper to extract clean alphanumeric tokens
+        def _extract_tokens(s: str) -> set[str]:
+            return {w.lower() for w in re.findall(r"\b[A-Za-z0-9äöåÄÖÅà-ÿ]{3,}\b", s)}
 
-            if words and orig_lines:
-                # Search forward in original lines to preserve reading order
-                search_slice = orig_lines[curr_line_idx:]
-                for idx_offset, ln in enumerate(search_slice):
-                    ln_text = (ln.text or "").lower()
-                    if any(w in ln_text for w in words[:12]):
-                        matched_lines.append(ln)
-                        curr_line_idx = min(len(orig_lines) - 1, curr_line_idx + idx_offset)
+        # Precompute tokens for original lines
+        orig_tokens = [_extract_tokens(ln.text or "") for ln in orig_lines]
+
+        for p_idx, para in enumerate(paras):
+            p_tokens = _extract_tokens(para)
+            matched_lines: list[OcrLine] = []
+
+            if p_tokens and orig_lines:
+                best_start = curr_line_idx
+                best_count = 0
+                best_matched: list[OcrLine] = []
+
+                # Lookahead search window across remaining original lines
+                search_limit = min(len(orig_lines), curr_line_idx + max(14, len(p_tokens) // 2))
+                for start_i in range(curr_line_idx, search_limit):
+                    current_matched: list[OcrLine] = []
+                    overlap_tokens: set[str] = set()
+                    
+                    # Accumulate original lines that overlap with this paragraph
+                    for k in range(start_i, min(len(orig_lines), start_i + 8)):
+                        common = p_tokens & orig_tokens[k]
+                        if common:
+                            current_matched.append(orig_lines[k])
+                            overlap_tokens |= common
+
+                    if len(overlap_tokens) > best_count:
+                        best_count = len(overlap_tokens)
+                        best_start = start_i
+                        best_matched = current_matched
+
+                if best_matched and best_count >= 2:
+                    matched_lines = best_matched
+                    # Advance cursor to keep sequential reading order
+                    last_matched_idx = max(orig_lines.index(ln) for ln in best_matched)
+                    curr_line_idx = min(len(orig_lines) - 1, last_matched_idx + 1)
 
             if matched_lines:
                 # Use the real bounding box of the matching lines (stays inside its column)
@@ -573,11 +600,27 @@ class PlaybackController:
                     OcrLine(text=para, left=x0, top=y0, width=x1 - x0, height=y1 - y0)
                 )
             else:
-                # Fallback: keep minimal zero-width marker so it doesn't draw a fake full-width bar
-                out.append(
-                    OcrLine(text=para, left=0, top=0, width=0, height=0)
-                )
+                # Fallback: interpolate position between previous matched chunk and page layout
+                prev_bbox = out[-1] if out and out[-1].width > 0 else None
+                if prev_bbox:
+                    # Place immediately below the previous paragraph with realistic line height
+                    est_top = min(prev_bbox.top + prev_bbox.height + 8, getattr(page.image, 'height', 1000) - 40)
+                    est_h = max(24, min(120, len(para) // 3))
+                    out.append(
+                        OcrLine(text=para, left=prev_bbox.left, top=est_top, width=prev_bbox.width, height=est_h)
+                    )
+                elif orig_lines:
+                    # Take position from current cursor line
+                    guide_ln = orig_lines[min(curr_line_idx, len(orig_lines) - 1)]
+                    out.append(
+                        OcrLine(text=para, left=guide_ln.left, top=guide_ln.top, width=guide_ln.width, height=guide_ln.height)
+                    )
+                else:
+                    out.append(
+                        OcrLine(text=para, left=0, top=0, width=0, height=0)
+                    )
 
+        # [IMPROVEMENT: BBOX-ANCHOR - END]
         return out
 
     def replace_one_page_text(

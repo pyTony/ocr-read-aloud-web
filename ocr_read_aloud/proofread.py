@@ -28,6 +28,24 @@ _PROGRESS_INTERVAL_S = 1.25
 # A stuck HTTP read may therefore take up to ~this long to interrupt.
 _STREAM_READ_TIMEOUT_S = 2.0
 
+# [IMPROVEMENT: OCR-SPLIT-REPAIR - BEGIN]
+# Upgraded system prompt explicitly mandating aggressive split-word & dehyphenation repair.
+# (Original prompt preserved below for backtracking reference):
+# _ORIGINAL_SYSTEM_PROMPT = (
+#     "You lightly proofread OCR text meant for text-to-speech. "
+#     "Fix OCR garbage, join broken words split across lines or by accidental spaces "
+#     "inside a word (for example 'do ing' -> 'doing' and 'mag az in e' -> 'magazine'), "
+#     "and keep the meaning. "
+#     "Insert blank lines between sensible paragraphs for TTS pacing. "
+#     "Preserve the input reading order exactly; never move a section or column. "
+#     "Do NOT summarize, shorten, expand, or invent content. "
+#     "Preserve structure and any page/section markers (e.g. === Page N ===). "
+#     "If this page is clearly a full-page advertisement interrupting an article "
+#     "(product pitch, coupon, dealer list, little article prose), begin the output "
+#     "with the exact line [[SKIP_AS_AD]] then the cleaned ad text. "
+#     "If unsure, do not use that marker. "
+#     "Return plain text only — no markdown fences, no commentary."
+# )
 _SYSTEM_PROMPT = (
     "You are an expert OCR proofreader and editor for scanned publications and magazines. "
     "PRIMARY MANDATE: AGGRESSIVELY REPAIR SPLIT WORDS AND DEHYPHENATE. "
@@ -45,6 +63,7 @@ _SYSTEM_PROMPT = (
     "Preserve page/section markers (e.g. === Page N ===). "
     "4. If this page is strictly an advertisement, start with [[SKIP_AS_AD]]. Return plain text only."
 )
+# [IMPROVEMENT: OCR-SPLIT-REPAIR - END]
 
 def parse_proof_page_text(text: str) -> tuple[str, bool]:
     """
@@ -155,6 +174,56 @@ def _is_timeout_exc(exc: BaseException) -> bool:
     # Some platforms wrap timeouts in OSError / URLError
     msg = str(exc).lower()
     return "timed out" in msg or "timeout" in msg
+
+
+def gemini_proofread_text(
+    text: str,
+    *,
+    api_key: str | None = None,
+    model: str = "gemini-2.5-flash",
+) -> str:
+    """Proofread OCR text using Google Gemini API."""
+    import os
+    key = api_key or os.environ.get("GEMINI_API_KEY")
+    if not key:
+        raise ProofreadError("GEMINI_API_KEY environment variable is required for Gemini proofreading.")
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+    payload = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [{"text": f"OCR TEXT TO PROOFREAD:\n{text}"}]
+            }
+        ],
+        "systemInstruction": {
+            "parts": [{"text": _SYSTEM_PROMPT}]
+        },
+        "generationConfig": {
+            "temperature": 0.1
+        }
+    }
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            candidates = data.get("candidates", [])
+            if not candidates:
+                return text
+            parts = candidates[0].get("content", {}).get("parts", [])
+            output = "".join(p.get("text", "") for p in parts).strip()
+            if not output:
+                return text
+            cleaned = _strip_fences(output)
+            from ocr_read_aloud.text_clean import repair_split_words_and_dehyphenate
+            return repair_split_words_and_dehyphenate(cleaned)
+    except Exception as exc:
+        raise ProofreadError(f"Gemini API request failed: {exc}")
 
 
 def _ollama_chat_stream(
@@ -321,9 +390,12 @@ def ollama_vision_ocr(
             "issue number, date, price, headline) — the largest text on "
             "the page is the most important, not the least.\n"
             "- INCLUDE body text, captions, headings, and pull-quotes.\n"
-            "- IGNORE text that is part of a drawing, diagram, illustration, "
-            "or photograph (anatomical labels, circuit references, map "
-            "labels, chart axis text). Those are artwork, not page text.\n"
+            "- INCLUDE text inside advertisement boxes, order forms, coupons, "
+            "catalog listings, tables, or grid boxes even if they have borders "
+            "or drawings around them. Only ignore text inside pure non-prose "
+            "illustrations (like labels inside a circuit diagram, map "
+            "coordinates, or chart axis titles if they are not part of "
+            "readable paragraphs/catalog items).\n"
             "- Preserve paragraph breaks as blank lines.\n"
             "- Do not describe pictures or layout. Do not comment.\n"
             "- Do not invent section headers like '=== Page N ==='.\n"
@@ -341,9 +413,12 @@ def ollama_vision_ocr(
             "issue number, date, price, headline) — the largest text on "
             "the page is the most important, not the least.\n"
             "- INCLUDE body text, captions, headings, and pull-quotes.\n"
-            "- IGNORE text that is part of a drawing, diagram, illustration, "
-            "or photograph (anatomical labels, circuit references, map "
-            "labels, chart axis text). Those are artwork, not page text.\n"
+            "- INCLUDE text inside advertisement boxes, order forms, coupons, "
+            "catalog listings, tables, or grid boxes even if they have borders "
+            "or drawings around them. Only ignore text inside pure non-prose "
+            "illustrations (like labels inside a circuit diagram, map "
+            "coordinates, or chart axis titles if they are not part of "
+            "readable paragraphs/catalog items).\n"
             "- Preserve paragraph breaks as blank lines.\n"
             "- Do not describe pictures or layout. Do not comment.\n"
             "- Do not invent section headers like '=== Page N ==='.\n"
@@ -468,6 +543,14 @@ def proofread_text(
     if not text:
         return ""
 
+    if model.startswith("gemini-") or "gemini" in model.lower():
+        if on_progress:
+            on_progress("Calling Google Gemini proofread...")
+        try:
+            return gemini_proofread_text(text, model=model)
+        except Exception as exc:
+            raise ProofreadError(f"Gemini proofread failed: {exc}")
+
     _check_cancel()
     chunks = _chunk_text(text, max_chars=chunk_chars)
     if not chunks:
@@ -504,7 +587,18 @@ def proofread_text(
             visual_hint=visual_hint if j == 1 else None,
         )
         out.append(fixed)
-    return "\n\n".join(out).strip()
+    joined = "\n\n".join(out).strip()
+
+    # [IMPROVEMENT: OCR-SPLIT-REPAIR - BEGIN]
+    # Post-process proofread text with split-word & dehyphenation repair
+    try:
+        from ocr_read_aloud.text_clean import repair_split_words_and_dehyphenate
+        joined = repair_split_words_and_dehyphenate(joined)
+    except Exception:
+        pass
+    # [IMPROVEMENT: OCR-SPLIT-REPAIR - END]
+
+    return joined
 
 
 

@@ -51,6 +51,12 @@ export function looksLikeAd(page: PageUnit): { isAd: boolean; reasons: string[] 
   const text = page.rawText;
   const reasons: string[] = [];
 
+  // Page 1 is the Cover of the document/magazine - NEVER classify Page 1 / Cover as an ad!
+  const isCover = page.pageNumber === 1 || page.label === 'Page 1' || page.label.toLowerCase().includes('cover');
+  if (isCover) {
+    return { isAd: false, reasons: [] };
+  }
+
   // Pages with continued from are never ads
   if (parseContinuedFrom(text).length > 0) {
     return { isAd: false, reasons: [] };

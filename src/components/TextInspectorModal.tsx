@@ -19,6 +19,7 @@ export const TextInspectorModal: React.FC<TextInspectorModalProps> = ({
   onUpdatePageText,
 }) => {
   const [activeTab, setActiveTab] = useState<'current' | 'article' | 'full'>('current');
+  const [textVariant, setTextVariant] = useState<'proofread' | 'raw'>('proofread');
   const [copied, setCopied] = useState(false);
 
   if (!isOpen) return null;
@@ -30,8 +31,10 @@ export const TextInspectorModal: React.FC<TextInspectorModalProps> = ({
   let downloadFilename = 'document.ocr.txt';
 
   if (activeTab === 'current' && currentPage) {
-    displayText = currentPage.proofreadText || currentPage.rawText;
-    downloadFilename = `${currentPage.label || 'page'}.txt`;
+    displayText = textVariant === 'proofread' 
+      ? (currentPage.proofreadText || currentPage.rawText) 
+      : currentPage.rawText;
+    downloadFilename = `${currentPage.label || 'page'}_${textVariant}.txt`;
   } else if (activeTab === 'article') {
     displayText = formatPagesDump(pages, currentArticleIndices);
     downloadFilename = `${currentPage?.inferredTitle || 'article'}.txt`;
@@ -128,26 +131,44 @@ export const TextInspectorModal: React.FC<TextInspectorModalProps> = ({
           </div>
         </div>
 
-        {/* Current Page Diagnostic Info */}
+        {/* Current Page Diagnostic Info & Text Variant Toggle */}
         {activeTab === 'current' && currentPage && (
-          <div className="bg-neutral-900/90 px-4 py-2 border-b border-neutral-800 text-xs flex flex-wrap items-center gap-4 text-neutral-400 font-mono">
-            <span>Title: <strong className="text-neutral-200">{currentPage.inferredTitle}</strong></span>
-            {currentPage.skipAsAd && (
-              <span className="text-amber-400 flex items-center gap-1">
-                <ShieldAlert className="w-3.5 h-3.5" />
-                Ad Reasons: {currentPage.adReasons.join(', ') || 'Marked as ad'}
-              </span>
-            )}
-            {currentPage.continuedOn.length > 0 && (
-              <span className="text-indigo-400">
-                Continued On: Page {currentPage.continuedOn.join(', ')}
-              </span>
-            )}
-            {currentPage.continuedFrom.length > 0 && (
-              <span className="text-emerald-400">
-                Continued From: Page {currentPage.continuedFrom.join(', ')}
-              </span>
-            )}
+          <div className="bg-neutral-900/90 px-4 py-2 border-b border-neutral-800 text-xs flex flex-wrap items-center justify-between gap-3 text-neutral-400 font-mono">
+            <div className="flex items-center gap-4 flex-wrap">
+              <span>Title: <strong className="text-neutral-200">{currentPage.inferredTitle}</strong></span>
+              {currentPage.skipAsAd && (
+                <span className="text-amber-400 flex items-center gap-1">
+                  <ShieldAlert className="w-3.5 h-3.5" />
+                  Ad Reasons: {currentPage.adReasons.join(', ') || 'Marked as ad'}
+                </span>
+              )}
+            </div>
+
+            {/* Proofread vs Raw PDF Text Segmented Toggle */}
+            <div className="flex items-center bg-neutral-950 p-0.5 rounded border border-neutral-800">
+              <button
+                onClick={() => setTextVariant('proofread')}
+                className={`px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${
+                  textVariant === 'proofread'
+                    ? 'bg-amber-500 text-neutral-950 font-bold'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+                title="View LLM or Rule Cleaned Proofread Text"
+              >
+                Proofread Text
+              </button>
+              <button
+                onClick={() => setTextVariant('raw')}
+                className={`px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${
+                  textVariant === 'raw'
+                    ? 'bg-amber-500 text-neutral-950 font-bold'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+                title="View Raw PDF Extracted OCR Text"
+              >
+                Raw PDF OCR
+              </button>
+            </div>
           </div>
         )}
 

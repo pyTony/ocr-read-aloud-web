@@ -105,7 +105,94 @@ def dehyphenate_inline(text: str) -> str:
             break
         prev = cur
         cur = _INLINE_DEHYPHEN.sub(_repl, cur)
+
+    # [IMPROVEMENT: OCR-SPLIT-REPAIR - BEGIN]
+    # Apply comprehensive split-word repair to fix scanner tracking artifacts & broken syllables
+    cur = repair_split_words_and_dehyphenate(cur)
+    # [IMPROVEMENT: OCR-SPLIT-REPAIR - END]
+
     return cur
+
+
+# [IMPROVEMENT: OCR-SPLIT-REPAIR - BEGIN]
+# Regex patterns for split words and OCR letter-tracking defects
+_COMMON_PREFIXES_RE = re.compile(
+    r"\b(micro|macro|inter|intra|multi|ultra|super|semi|anti|auto|tele|trans|sub|pseudo|mono|poly|omni|tieto|ohjel|puheen|lait|järjes|kirjoi|elektroniik)\s+([a-zà-öø-ÿäöå][\w]*)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
+_COMMON_SUFFIXES_RE = re.compile(
+    r"\b([a-zà-öø-ÿäöå]{3,})\s+(ing|tion|tions|ation|ations|ment|ments|able|ible|ness|less|ful|fully|sion|sions|ity|ities|ized|izing|ally)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
+_COMMON_SPLIT_WORDS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\b(cir)\s+(cuits?)\b", re.IGNORECASE), r"\1\2"),
+    (re.compile(r"\b(syn)\s+(thesi[sz]ers?|thetic|thesis)\b", re.IGNORECASE), r"\1\2"),
+    (re.compile(r"\b(soft|hard)\s+(wares?)\b", re.IGNORECASE), r"\1\2"),
+    (re.compile(r"\b(key)\s+(boards?)\b", re.IGNORECASE), r"\1\2"),
+    (re.compile(r"\b(data)\s+(base[s]?)\b", re.IGNORECASE), r"\1\2"),
+    (re.compile(r"\b(byte)\s+(savers?)\b", re.IGNORECASE), r"\1\2"),
+    (re.compile(r"\b(star)\s+(ships?)\b", re.IGNORECASE), r"\1\2"),
+    (re.compile(r"\b(fre)\s+(quenc(?:y|ies))\b", re.IGNORECASE), r"\1\2"),
+    (re.compile(r"\b(sig)\s+(nals?)\b", re.IGNORECASE), r"\1\2"),
+    (re.compile(r"\b(os)\s+(cillat(?:or|ors|ion))\b", re.IGNORECASE), r"\1\2"),
+    (re.compile(r"\b(re)\s+(gist(?:er|ers|ered|ration))\b", re.IGNORECASE), r"\1\2"),
+    (re.compile(r"\b(me)\s+(mor(?:y|ies))\b", re.IGNORECASE), r"\1\2"),
+    (re.compile(r"\b(ca)\s+(paci(?:ty|tor|tors|tance))\b", re.IGNORECASE), r"\1\2"),
+    (re.compile(r"\b(con)\s+(troll?ers?|trols?|trolled|trolling)\b", re.IGNORECASE), r"\1\2"),
+    (re.compile(r"\b(trans)\s+(fer|fers|ferred|ferring)\b", re.IGNORECASE), r"\1\2"),
+    (re.compile(r"\b(dia)\s+(grams?)\b", re.IGNORECASE), r"\1\2"),
+    (re.compile(r"\b(wave)\s+(forms?)\b", re.IGNORECASE), r"\1\2"),
+    (re.compile(r"\b(mag)\s+(azines?)\b", re.IGNORECASE), r"\1\2"),
+    (re.compile(r"\b(pub)\s+(licat(?:ion|ions))\b", re.IGNORECASE), r"\1\2"),
+    (re.compile(r"\b(pro)\s+(gramm?ers?|gramm?ing|grams?)\b", re.IGNORECASE), r"\1\2"),
+    (re.compile(r"\b(com)\s+(puters?|puting)\b", re.IGNORECASE), r"\1\2"),
+]
+
+_BROKEN_INITIAL_LETTER = re.compile(r"\b(t|w|a|h)\s+(he|hat|his|hese|hose|ith|ere|hen|hich|nd|ave|ad|as)\b", re.IGNORECASE)
+_BROKEN_TERMINAL_LETTER = re.compile(r"\b(speec|whic|wit|eac|muc|suc|researc|approac|pitc|catc|matc|switc)\s+(h)\b", re.IGNORECASE)
+_BROKEN_ER_SUFFIX = re.compile(r"\b(compute|printe|characte|generato|buffe|use|membe|autho|develope)\s+(r)\b", re.IGNORECASE)
+_BROKEN_T_SUFFIX = re.compile(r"\b(circui|outpu|inpu|uni|digi|forma|curren)\s+(t)\b", re.IGNORECASE)
+_SPACE_HYPHEN_SPLIT = re.compile(r"([\w]{2,})\s*[\-\u2010\u2013]\s+([a-zà-öø-ÿäöå][\w]*)", re.UNICODE)
+
+
+def repair_split_words_and_dehyphenate(text: str) -> str:
+    """
+    Robust repair for words broken across hyphens, line breaks, or accidental OCR spaces.
+    Backtrackable improvement added from the web engine.
+    """
+    if not text:
+        return ""
+    t = text.replace("\u00ad", "").replace("\u200b", "")
+
+    # 1. Space-hyphen-space splits: "micro - processor" -> "microprocessor"
+    def _repl_sh(m: re.Match[str]) -> str:
+        tok = _first_token(m.group(2))
+        if tok in _COMPOUND_NEXT:
+            return f"{m.group(1)}-{m.group(2)}"
+        return f"{m.group(1)}{m.group(2)}"
+
+    t = _SPACE_HYPHEN_SPLIT.sub(_repl_sh, t)
+
+    # 2. Known prefixes broken by spaces: "micro processor" -> "microprocessor"
+    t = _COMMON_PREFIXES_RE.sub(r"\1\2", t)
+
+    # 3. Known suffixes broken by spaces: "comput ing" -> "computing"
+    t = _COMMON_SUFFIXES_RE.sub(r"\1\2", t)
+
+    # 4. Frequent technical domain word splits
+    for pat, repl in _COMMON_SPLIT_WORDS:
+        t = pat.sub(repl, t)
+
+    # 5. Broken single-character splits caused by OCR scanner tracking
+    t = _BROKEN_INITIAL_LETTER.sub(r"\1\2", t)
+    t = _BROKEN_TERMINAL_LETTER.sub(r"\1\2", t)
+    t = _BROKEN_ER_SUFFIX.sub(r"\1\2", t)
+    t = _BROKEN_T_SUFFIX.sub(r"\1\2", t)
+
+    return t
+# [IMPROVEMENT: OCR-SPLIT-REPAIR - END]
 
 
 # Form fill-in lines (OCR underscores). Longest/most specific first.

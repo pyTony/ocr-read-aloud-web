@@ -1,6 +1,7 @@
 import { PageUnit } from '../types';
 import { looksLikeAd } from './adDetection';
 import { parseContinuedFrom, parseContinuedOn } from './continueLinks';
+import { isFileUrlOrArtifact, hasDateOrTimestampPattern } from './headerFooterDetection';
 
 const CONT_NOISE = /^\s*(?:continued\s+(?:on|from)|cont\.?\s+(?:on|from))/i;
 
@@ -29,6 +30,8 @@ export function inferPageTitle(page: PageUnit, fallback: string = 'untitled'): s
     if (CONT_NOISE.test(line)) continue;
     if (/^\d{1,4}$/.test(line)) continue;
     if (line.length < 3) continue;
+    if (isFileUrlOrArtifact(line)) continue;
+    if (hasDateOrTimestampPattern(line) && line.length <= 45) continue;
 
     let score = 10.0 - i * 0.5;
     if (line.length >= 8 && line.length <= 60) score += 3.0;
