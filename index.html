@@ -1,16 +1,396 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔊</text></svg>" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>OCR Read Aloud</title>
-    <meta name="description" content="Read aloud scanned publications and PDFs with authentic 1976 BYTE magazine page previews, ad-grid Bridge Rule ordering, synchronized speech highlighting, and multi-engine AI proofreading." />
-    <meta property="og:title" content="OCR Read Aloud" />
-    <meta property="og:description" content="Read aloud scanned publications and PDFs with authentic 1976 BYTE magazine page previews, ad-grid Bridge Rule ordering, synchronized speech highlighting, and multi-engine AI proofreading." />
-  </head>
-  <body class="bg-neutral-900 text-neutral-100 antialiased min-h-screen selection:bg-amber-500 selection:text-neutral-950">
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Say-Day Speaking Clock</title>
+    <style>
+        /* THE WHOLE SCREEN ACTS AS AN ACTIVE BUTTON */
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000000;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+        }
+
+        /* Giant touch/click area (doesn't matter where the pointer is) */
+        .fullscreen-click-area {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-sizing: border-box;
+            padding: 40px;
+        }
+        .fullscreen-click-area:focus {
+            outline: none;
+        }
+        
+        .time-display {
+            font-size: 10rem;
+            font-weight: 900;
+            color: #ffaa00; /* Yellow for high contrast */
+            margin-bottom: 20px;
+            letter-spacing: 2px;
+        }
+        .date-display {
+            font-size: 4.5rem;
+            font-weight: bold;
+            color: #ffffff;
+            margin-bottom: 40px;
+            line-height: 1.2;
+            text-align: center;
+        }
+        .instruction {
+            font-size: 2.5rem;
+            color: #00ff66;
+            font-weight: bold;
+            text-align: center;
+        }
+        
+        /* CONTROL PANEL AT THE BOTTOM (dropdown with the original styling) */
+        .control-panel {
+            position: absolute;
+            bottom: 40px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            background-color: #111111;
+            padding: 15px 30px;
+            border-radius: 12px;
+            border: 2px solid #333333;
+            cursor: default; 
+        }
+        
+        .lang-icon {
+            font-size: 2.5rem;
+        }
+        .lang-dropdown {
+            background-color: #222222;
+            color: #ffffff;
+            border: 2px solid #0078d4;
+            padding: 15px 20px;
+            font-size: 1.8rem;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .lang-dropdown:focus {
+            border-color: #ffaa00;
+            outline: none;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- FULL-SCREEN BUTTON AREA -->
+    <div id="sayDayScreen" class="fullscreen-click-area" role="button" tabindex="0" onclick="handleActivation()">
+        <div class="time-display" aria-hidden="true" id="timeTxt">--:--</div>
+        <div class="date-display" aria-hidden="true" id="dateTxt">------ -----</div>
+        <div class="instruction" aria-hidden="true" id="instructionTxt">🔊 ...</div>
+    </div>
+
+    <!-- LANGUAGE SELECTION: TRADITIONAL DROPDOWN -->
+    <div class="control-panel" id="controlPanel">
+        <span class="lang-icon" aria-hidden="true">🌐</span>
+        <select id="langDropdown" class="lang-dropdown" onchange="changeLanguage(this.value)" aria-label="Choose speech language / Valitse puhekieli">
+            <option value="fi">Suomi (Finnish)</option>
+            <option value="sv">Svenska (Swedish)</option>
+            <option value="no">Norsk (Norwegian)</option>
+            <option value="da">Dansk (Danish)</option>
+            <option value="en">English (US)</option>
+            <option value="de">Deutsch (German)</option>
+            <option value="fr">Français (French)</option>
+            <option value="es">Español (Spanish)</option>
+            <option value="it">Italiano (Italian)</option>
+            <option value="pt">Português (Portuguese)</option>
+            <option value="nl">Nederlands (Dutch)</option>
+            <option value="pl">Polski (Polish)</option>
+            <option value="ru">Русский (Russian)</option>
+            <option value="ja">日本語 (Japanese)</option>
+            <option value="zh">中文 (Chinese)</option>
+            <option value="ko">한국어 (Korean)</option>
+            <option value="ar">العربية (Arabic)</option>
+        </select>
+    </div>
+
+    <script>
+        const translations = {
+            "fi": {
+                ariaLabel: "Say-Day Puhepäivyri. Klikkaa mistä tahansa ruudulta kuullaksesi ajan suomeksi.",
+                instruction: "🔊 Paina ruutua kuullaksesi puheen"
+            },
+            "sv": {
+                ariaLabel: "Say-Day Talande kalender. Klicka var som helst på skärmen för att höra tiden.",
+                instruction: "🔊 Tryck på skärmen för att höra talet"
+            },
+            "no": {
+                ariaLabel: "Say-Day Talende kalender. Klikk hvor som helst på skjermen for å høre tiden.",
+                instruction: "🔊 Trykk på skjermen for å høre talen"
+            },
+            "en": {
+                ariaLabel: "Say-Day Speaking Calendar. Click anywhere on the screen to hear the time.",
+                instruction: "🔊 Press the screen to hear speech aloud"
+            },
+            "da": {
+                ariaLabel: "Say-Day Talende kalender. Klik hvor som helst på skærmen for at høre tiden.",
+                instruction: "🔊 Tryk på skærmen for at høre tale"
+            },
+            "de": {
+                ariaLabel: "Say-Day Sprechender Kalender. Klicken Sie irgendwo auf den Bildschirm, um die Uhrzeit zu hören.",
+                instruction: "🔊 Bildschirm drücken, um die Sprachausgabe zu hören"
+            },
+            "fr": {
+                ariaLabel: "Say-Day Calendrier parlant. Cliquez n'importe où sur l'écran pour entendre l'heure.",
+                instruction: "🔊 Appuyez sur l'écran pour entendre la voix"
+            },
+            "es": {
+                ariaLabel: "Say-Day Calendario parlante. Haga clic en cualquier parte de la pantalla para escuchar la hora.",
+                instruction: "🔊 Presiona la pantalla para escuchar la voz"
+            },
+            "it": {
+                ariaLabel: "Say-Day Calendario parlante. Clicca ovunque sullo schermo per ascoltare l'ora.",
+                instruction: "🔊 Premi lo schermo per ascoltare la voce"
+            },
+            "pt": {
+                ariaLabel: "Say-Day Calendário falante. Clique em qualquer lugar do ecrã para ouvir a hora.",
+                instruction: "🔊 Prima o ecrã para ouvir a voz"
+            },
+            "nl": {
+                ariaLabel: "Say-Day Sprekende kalender. Klik ergens op het scherm om de tijd te horen.",
+                instruction: "🔊 Druk op het scherm om de spraak te horen"
+            },
+            "pl": {
+                ariaLabel: "Say-Day Mówiący kalendarz. Kliknij w dowolnym miejscu ekranu, aby usłyszeć godzinę.",
+                instruction: "🔊 Naciśnij ekran, aby usłyszeć mowę"
+            },
+            "ru": {
+                ariaLabel: "Say-Day Говорящий календарь. Нажмите в любом месте экрана, чтобы услышать время.",
+                instruction: "🔊 Нажмите экран, чтобы услышать речь"
+            },
+            "ja": {
+                ariaLabel: "Say-Day しゃべるカレンダー。画面のどこかをクリックすると時刻が読み上げられます。",
+                instruction: "🔊 画面を押すと音声が聞けます"
+            },
+            "zh": {
+                ariaLabel: "Say-Day 语音日历。点击屏幕任意位置以听取时间。",
+                instruction: "🔊 按屏幕以听取语音"
+            },
+            "ko": {
+                ariaLabel: "Say-Day 음성 달력. 화면 아무 곳이나 클릭하여 시간을 들어보세요.",
+                instruction: "🔊 화면을 눌러 음성을 들어보세요"
+            },
+            "ar": {
+                ariaLabel: "Say-Day التقويم الناطق. انقر في أي مكان على الشاشة لسماع الوقت.",
+                instruction: "🔊 اضغط على الشاشة لسماع الصوت"
+            }
+        };
+
+        // BCP-47 fallback codes for speech synthesis, used if no matching system voice is found
+        const fallbackLangCodes = {
+            fi: 'fi-FI', sv: 'sv-SE', no: 'nb-NO', da: 'da-DK', en: 'en-US',
+            de: 'de-DE', fr: 'fr-FR', es: 'es-ES', it: 'it-IT', pt: 'pt-PT',
+            nl: 'nl-NL', pl: 'pl-PL', ru: 'ru-RU', ja: 'ja-JP', zh: 'zh-CN',
+            ko: 'ko-KR', ar: 'ar-SA'
+        };
+
+        // Spoken-sentence templates per language
+        const speechTemplates = {
+            fi: (time, date) => `Kello on ${time}. Tänään on ${date}.`,
+            sv: (time, date) => `Klockan är ${time}. Idag är det ${date}.`,
+            no: (time, date) => `Klokken er ${time}. I dag er det ${date}.`,
+            da: (time, date) => `Klokken er ${time}. I dag er det ${date}.`,
+            en: (time, date) => `The time is ${time}. Today is ${date}.`,
+            de: (time, date) => `Es ist ${time} Uhr. Heute ist ${date}.`,
+            fr: (time, date) => `Il est ${time}. Aujourd'hui, nous sommes le ${date}.`,
+            es: (time, date) => `Son las ${time}. Hoy es ${date}.`,
+            it: (time, date) => `Sono le ${time}. Oggi è ${date}.`,
+            pt: (time, date) => `São ${time}. Hoje é ${date}.`,
+            nl: (time, date) => `Het is ${time} uur. Vandaag is het ${date}.`,
+            pl: (time, date) => `Jest godzina ${time}. Dziś jest ${date}.`,
+            ru: (time, date) => `Сейчас ${time}. Сегодня ${date}.`,
+            ja: (time, date) => `現在の時刻は${time}です。今日は${date}です。`,
+            zh: (time, date) => `现在时间是${time}。今天是${date}。`,
+            ko: (time, date) => `현재 시각은 ${time}입니다. 오늘은 ${date}입니다.`,
+            ar: (time, date) => `الساعة الآن ${time}. اليوم هو ${date}.`
+        };
+
+        // Languages written right-to-left
+        const rtlLanguages = new Set(['ar']);
+
+        // Some locales (fi, de, no, da...) format the day as "16." — a period
+        // used as an ordinal marker. Speech engines read that period as an
+        // end-of-sentence mark and insert an unnatural pause/pitch-drop right
+        // after the day number. Strip it only for the spoken text; the
+        // on-screen date keeps its normal written form.
+        function toSpokenText(text) {
+            return text.replace(/(\d+)\.(\s|$)/g, '$1$2');
+        }
+
+        // Finnish day-of-month ordinals (1st-31st) in the nominative form
+        // used in spoken dates ("kuudestoista syyskuuta"). Stripping the
+        // period instead would make voices read the day as a cardinal
+        // number ("kuusitoista") rather than the correct ordinal.
+        const finnishDayOrdinals = [
+            null, 'ensimmäinen', 'toinen', 'kolmas', 'neljäs', 'viides', 'kuudes',
+            'seitsemäs', 'kahdeksas', 'yhdeksäs', 'kymmenes', 'yhdestoista',
+            'kahdestoista', 'kolmastoista', 'neljästoista', 'viidestoista',
+            'kuudestoista', 'seitsemästoista', 'kahdeksastoista', 'yhdeksästoista',
+            'kahdeskymmenes', 'kahdeskymmenesensimmäinen', 'kahdeskymmenestoinen',
+            'kahdeskymmeneskolmas', 'kahdeskymmenesneljäs', 'kahdeskymmenesviides',
+            'kahdeskymmeneskuudes', 'kahdeskymmenesseitsemäs', 'kahdeskymmeneskahdeksas',
+            'kahdeskymmenesyhdeksäs', 'kolmaskymmenes', 'kolmaskymmenesensimmäinen'
+        ];
+
+        // Builds the Finnish spoken date ("keskiviikko kuudestoista syyskuuta")
+        // from the date's own parts, so the day is spoken as a proper ordinal
+        // word instead of relying on a punctuation mark the speech engine
+        // misreads as a sentence break.
+        function buildFinnishSpokenDate(date) {
+            const parts = new Intl.DateTimeFormat('fi', { weekday: 'long', day: 'numeric', month: 'long' }).formatToParts(date);
+            return parts.map(part => {
+                if (part.type === 'day') {
+                    return finnishDayOrdinals[parseInt(part.value, 10)] || part.value;
+                }
+                if (part.type === 'literal') {
+                    return part.value.replace(/\./g, ''); // drop the ordinal period, keep the surrounding space
+                }
+                return part.value;
+            }).join('').trim();
+        }
+
+        let currentLanguage = 'en';
+        let deviceVoices = [];
+
+        document.getElementById('controlPanel').addEventListener('click', function(e) {
+            e.stopPropagation();
+        });
+
+        // Cache the browser's voices as soon as they're ready
+        function loadVoices() {
+            deviceVoices = window.speechSynthesis.getVoices();
+        }
+        
+        // Listen for the browser's own voice-loading event
+        if (window.speechSynthesis.onvoiceschanged !== undefined) {
+            window.speechSynthesis.onvoiceschanged = () => {
+                loadVoices();
+                updateClock();
+            };
+        }
+
+        function detectSystemLanguage() {
+            const browserLanguage = navigator.language.split('-')[0];
+            
+            if (translations[browserLanguage]) {
+                currentLanguage = browserLanguage;
+            } else if (browserLanguage === 'nb' || browserLanguage === 'nn') {
+                currentLanguage = 'no';
+            } else {
+                currentLanguage = 'en';
+            }
+            document.getElementById('langDropdown').value = currentLanguage;
+            updateUI();
+        }
+
+        function updateClock() {
+            const now = new Date();
+            const localeFormat = currentLanguage === 'no' ? 'no' : currentLanguage;
+            
+            document.getElementById('timeTxt').innerText = now.toLocaleTimeString(localeFormat, { hour: '2-digit', minute: '2-digit' });
+            
+            const options = { weekday: 'long', day: 'numeric', month: 'long' };
+            document.getElementById('dateTxt').innerText = now.toLocaleDateString(localeFormat, options);
+        }
+
+        function updateUI() {
+            const langData = translations[currentLanguage];
+            document.getElementById('sayDayScreen').setAttribute('aria-label', langData.ariaLabel);
+            document.getElementById('instructionTxt').innerText = langData.instruction;
+            document.documentElement.lang = fallbackLangCodes[currentLanguage] || currentLanguage;
+            document.documentElement.dir = rtlLanguages.has(currentLanguage) ? 'rtl' : 'ltr';
+            updateClock();
+        }
+
+        function enterFullscreen() {
+            const docEl = document.documentElement;
+            if (!document.fullscreenElement) {
+                if (docEl.requestFullscreen) { docEl.requestFullscreen(); }
+                else if (docEl.webkitRequestFullScreen) { docEl.webkitRequestFullScreen(); }
+            }
+        }
+
+        function handleActivation() {
+            enterFullscreen();
+            speakTimeAndDate();
+        }
+
+        // FULLY REWORKED SPEECH FUNCTION FOR CHROME
+        function speakTimeAndDate() {
+            window.speechSynthesis.cancel(); // Stop any speech in progress immediately
+
+            const timeText = document.getElementById('timeTxt').innerText;
+            const dateText = currentLanguage === 'fi'
+                ? buildFinnishSpokenDate(new Date())
+                : toSpokenText(document.getElementById('dateTxt').innerText);
+            
+            const speechTemplate = speechTemplates[currentLanguage] || speechTemplates.en;
+            let speechSentence = speechTemplate(timeText, dateText);
+
+            const utterance = new SpeechSynthesisUtterance(speechSentence);
+            utterance.rate = 0.9;
+
+            // Refresh the voice list just in case
+            loadVoices();
+
+            // CHROME STRATEGY: find a voice whose lang matches the current code (sv, nb, no, fi, ...)
+            let foundVoice = deviceVoices.find(v => {
+                const langLower = v.lang.toLowerCase();
+                if (currentLanguage === 'no') {
+                    return langLower.startsWith('no') || langLower.startsWith('nb') || langLower.startsWith('nn');
+                }
+                return langLower.startsWith(currentLanguage);
+            });
+
+            if (foundVoice) {
+                utterance.voice = foundVoice; // Lock in the real OS voice
+                utterance.lang = foundVoice.lang;
+            } else {
+                // BCP-47 emergency fallback
+                utterance.lang = fallbackLangCodes[currentLanguage] || 'en-US';
+            }
+
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function changeLanguage(lang) {
+            window.speechSynthesis.cancel(); // Stop
+            currentLanguage = lang;
+            updateUI();
+            speakTimeAndDate(); // Automatically start speaking in the new language
+        }
+
+        // SPACEBAR SUPPORT
+        window.addEventListener('keydown', function(e) {
+            if (document.activeElement === document.getElementById('langDropdown')) {
+                return;
+            }
+            if (e.key === ' ' || e.key === 'Enter') {
+                e.preventDefault();
+                handleActivation();
+            }
+        });
+
+        // Init
+        loadVoices();
+        detectSystemLanguage();
+        setInterval(updateClock, 1000);
+    </script>
+</body>
 </html>
